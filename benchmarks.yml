@@ -119,6 +119,7 @@ tinygql:
   desc: 30k_methods tests thousands of nested method calls that mostly just call out to other single-call methods.
   category: micro
   single_file: true
+  ractor: true
 attr_accessor:
   desc: attr_accessor tests the performance of getting instance variable values via an attr_accessor imemo.
   category: micro
