@@ -2,7 +2,7 @@ GEM
   remote: https://rubygems.org/
   specs:
     cgi (0.5.0)
-    rack (3.2.0)
+    rack (3.2.3)
 
 PLATFORMS
   ruby
