@@ -101,6 +101,70 @@ It's also convenient for profiling, debugging, etc, especially since all benchma
 ruby benchmarks/some_benchmark.rb
 ```
 
+### Benchmark organization
+
+Benchmarks can be organized in three ways:
+
+1. **Standalone .rb files** - Place a `.rb` file directly in the `benchmarks/` directory:
+   ```
+   benchmarks/fib.rb         # Benchmark name: "fib"
+   ```
+
+2. **Single benchmark per directory** - For benchmarks that need additional files (like Gemfiles):
+   ```
+   benchmarks/erubi/
+     benchmark.rb            # Benchmark name: "erubi"
+     Gemfile
+   ```
+
+3. **Multiple benchmarks per directory** - For related benchmarks sharing dependencies:
+   ```
+   benchmarks/addressable/
+     equality.rb             # Benchmark name: "addressable-equality"
+     join.rb                 # Benchmark name: "addressable-join"
+     Gemfile                 # Shared Gemfile
+   ```
+
+   In directories **without** a `benchmark.rb` file, all `.rb` files will be discovered as separate benchmarks.
+   The benchmark name is derived as `directoryname-suffix` from `suffix.rb` files.
+
+## Ractor Benchmarks
+
+ruby-bench supports Ractor-specific benchmarking with dedicated categories and benchmark directories.
+
+### Ractor Categories
+
+There are two Ractor-related categories:
+
+* **`--category ractor`** - Runs both regular benchmarks marked with `ractor:
+  true` in `benchmarks.yml` AND all benchmarks from the `benchmarks-ractor`
+  directory. The `harness-ractor` harness is used for both types of benchmark.
+
+* **`--category ractor-only`** - Runs ONLY benchmarks from the
+  `benchmarks-ractor` directory, ignoring regular benchmarks even if they are
+  marked with `ractor: true`. This category also automatically uses the
+  `harness-ractor` harness.
+
+### Directory Structure
+
+The `benchmarks-ractor/` directory sits at the same level as the main
+`benchmarks` directory, and contains Ractor-specific benchmark
+implementations that are designed to test Ractor functionality. They are not
+intended to be used with any harness except `harness-ractor`.
+
+### Usage Examples
+
+```bash
+# Run all Ractor-capable benchmarks (both regular and Ractor-specific)
+./run_benchmarks.rb --category ractor
+
+# Run only dedicated Ractor benchmarks from benchmarks-ractor directory
+./run_benchmarks.rb --category ractor-only
+```
+
+Note: The `harness-ractor` harness is automatically selected when using these
+categories, so there's no need to specify `--harness` manually.
+
 ## Ruby options
 
 By default, ruby-bench benchmarks the Ruby used for `run_benchmarks.rb`.
@@ -220,11 +284,21 @@ after each iteration with the default harness.
 
 ## Measuring memory usage
 
-`--rss` option of `run_benchmarks.rb` allows you to measure RSS after benchmark iterations.
+`--rss` option of `run_benchmarks.rb` allows you to measure RSS (resident set size).
 
 ```
 ./run_benchmarks.rb --rss
 ```
+
+The harness samples RSS once per iteration across the benchmarking window (after
+warmup), so the `RSS (MiB)` column reports the mean working set during measurement
+along with its run-to-run variability (`mean ± stddev%`), and the `RSS` ratio is
+computed from those means. The raw per-iteration samples are stored in the JSON
+output under `rss_samples` (bytes).
+
+For reference, the JSON output also keeps `rss`, a single snapshot taken after a
+full GC at the end of the run (the retained set, a lower bound), and `maxrss`, the
+process's lifetime peak from `getrusage`.
 
 ## Rendering a graph
 

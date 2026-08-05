@@ -37,12 +37,13 @@ gem "actionpack-page_caching"
 gem "bcrypt", "~> 3.1.2"
 gem "rotp"
 gem "rqrcode"
+gem "rqrcode_core"
 
 # parsing
 gem "pdf-reader"
 gem "nokogiri", ">= 1.13.9"
 gem "htmlentities"
-gem "commonmarker", ">= 0.23.6", "< 1.0" # The v1.0 Rust gem doesn't compile on Ruby master
+gem "markly"
 
 # perf - skip for benchmarking
 group :development do
@@ -69,7 +70,6 @@ group :test, :development do
   gem "rubocop-rails", require: false
   gem "rubocop-rspec", require: false
   gem "faker"
-  gem "byebug"
   gem "rb-readline"
   gem "vcr"
   gem "webmock" # used to support vcr

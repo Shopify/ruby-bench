@@ -19,6 +19,9 @@ liquid-c:
 liquid-compile:
   desc: compiles a chosen-for-profiling Liquid theme repeatedly.
   category: headline
+liquid-il:
+  desc: renders LiquidIL-generated Ruby for a set of Liquid templates repeatedly (Liquid compiled to standalone Ruby).
+  category: headline
 liquid-render:
   desc: renders a chosen-for-profiling Liquid theme repeatedly.
   category: headline
@@ -31,6 +34,7 @@ mail:
 psych-load:
   desc: psych-load repeatedly loads a small selection of YAML files taken from various OSS projects.
   category: headline
+  ractor: true
 railsbench:
   desc: railsbench is a read-only tiny SQLite-backed Rails app, querying a small selection of .html.erb routes and JSON routes.
   category: headline
@@ -50,46 +54,96 @@ shipit:
 #
 # Other Benchmarks
 #
+addressable-equality:
+  desc: addressable URI equality comparison
+addressable-getters:
+  desc: addressable URI component getters (scheme, host, port, path, query, fragment)
+addressable-join:
+  desc: addressable URI joining/merging paths
+addressable-merge:
+  desc: addressable URI merging options
+addressable-new:
+  desc: addressable URI construction from hash
+addressable-normalize:
+  desc: addressable URI normalization
+addressable-parse:
+  desc: addressable URI parsing (simple and complex URIs)
+addressable-setters:
+  desc: addressable URI component setters (scheme, host, path modification)
+addressable-to-s:
+  desc: addressable URI to string conversion
 binarytrees:
   desc: binarytrees from the Computer Language Benchmarks Game.
 blurhash:
   desc: blurhash (blurred preview image) calculation
+  ractor: true
+gcbench:
+  desc: Ellis-Kovac-Boehm GCBench builds binary trees of various depths to exercise GC marking, sweeping, and write barriers.
+  category: gc
+  single_file: true
+  default_harness: harness-gc
 erubi:
   desc: erubi compiles a simple Erb template into a method with erubi, then times evaluating that method.
+  ractor: true
 etanni:
   desc: etanni is an older, extremely simple template-lang format that basically turns your template into an "eval" with a lot of heredocs.
 fannkuchredux:
   desc: fannkuchredux from the Computer Language Benchmarks Game.
+  ractor: true
 fluentd:
   desc: fluentd is a log collector, which parses logs in a server and forwards them to various destinations.
 graphql:
   desc: GraphQL gem parsing a large file, uses Racc which has some Ruby->native->Ruby calls
+  ractor: true
 graphql-native:
   desc: GraphQL gem parsing a large file, but using a native parser
+knucleotide:
+  desc: k-nucleotide from the Computer Language Benchmarks Game - counts nucleotide frequencies using hash tables in parallel using Process.fork
+knucleotide-ractor:
+  desc: k-nucleotide from the Computer Language Benchmarks Game - counts nucleotide frequencies using hash tables in parallel using Ractors
+  ractor: true
+  ractor_only: true
+  default_harness: harness
 lee:
   desc: lee is a circuit-board layout solver, deployed in a plausibly reality-like way
 matmul:
   desc: matrix multiplication benchmark
+  ractor: true
 nbody:
   desc: nbody from the Computer Language Benchmarks Game.
 nqueens:
   desc: solver for the N-Queens problem
+  ractor: true
 optcarrot:
   desc: optcarrot is a functional headless NES emulator, run on a specific game cartridge for a specific number of frames.
+  ractor: true
 protoboeuf:
   desc: protoboeuf (pure-Ruby protobuf) message decoding
+  ractor: true
 protoboeuf-encode:
   desc: protoboeuf (pure-Ruby protobuf) message encoding
+  ractor: true
 rack:
   desc: test the performance of the Rack framework with barely any routing.
 ruby-json:
   desc: an optimized version of the json_pure gem's pure Ruby JSON parser.
+  ractor: true
 rubyboy:
   desc: Rubyboy is a functional headless GameBoy emulator, run on a specific game cartridge for a specific number of frames.
+  ractor: true
 rubykon:
   desc: Ruby solver for Go (the boardgame.) Runs many iterations forward from an initial starting board.
+splay:
+  desc: Splay tree operations (insert, find, remove) to stress GC.
+  single_file: true
 sudoku:
   desc: sudoku solver
+  ractor: true
+string_malloc_pressure:
+  desc: Allocates and retains many empty Strings with large reserved capacity to exercise GC under malloc-backed String buffer pressure.
+  category: gc
+  single_file: true
+  default_harness: harness-gc
 tinygql:
   desc: TinyGQL gem parsing a large file in pure Ruby
 
@@ -100,14 +154,17 @@ tinygql:
   desc: 30k_ifelse tests thousands of nested methods containing simple if/else statements.
   category: micro
   single_file: true
+  ractor: true
 30k_methods:
   desc: 30k_methods tests thousands of nested method calls that mostly just call out to other single-call methods.
   category: micro
   single_file: true
+  ractor: true
 attr_accessor:
   desc: attr_accessor tests the performance of getting instance variable values via an attr_accessor imemo.
   category: micro
   single_file: true
+  ractor: true
 cfunc_itself:
   desc: cfunc_itself just calls the 'itself' method many, many times.
   category: micro
@@ -116,10 +173,17 @@ fib:
   desc: Fib is a simple exponential-time recursive Fibonacci number generator.
   category: micro
   single_file: true
+  ractor: true
 getivar:
   desc: getivar tests the performance of getting instance variable values.
   category: micro
   single_file: true
+  ractor: true
+getivar-module:
+  desc: getivar tests the performance of getting instance variable values from modules.
+  category: micro
+  single_file: true
+  ractor: true
 keyword_args:
   desc: keyword_args tests the performance of method calls with keyword arguments.
   category: micro
@@ -128,8 +192,19 @@ loops-times:
   desc: nested loop Integer#times and array access microbenchmark
   category: micro
   single_file: true
+  ractor: true
 object-new:
   desc: instantiate a new object in a loop to test allocation performance
+  category: micro
+  single_file: true
+  ractor: true
+object-new-initialize:
+  desc: instantiate a new object and call initialize in a loop to test allocation and initialization performance
+  category: micro
+  single_file: true
+  ractor: true
+object-new-no-escape:
+  desc: instantiate new objects with ivars in a loop to test allocation and escape analysis performance
   category: micro
   single_file: true
 respond_to:
@@ -138,6 +213,23 @@ respond_to:
   single_file: true
 ruby-xor:
   desc: pure-Ruby string XOR microbenchmark, analogous to xorcist C extension.
+  category: micro
+  single_file: true
+  ractor: true
+send_bmethod:
+  desc: send_bmethod just calls known Ruby bmethods many, many times.
+  category: micro
+  single_file: true
+send_cfunc_block:
+  desc: send_cfunc_block just calls a known C function with a block many, many times.
+  category: micro
+  single_file: true
+send_rubyfunc_block:
+  desc: send_rubyfunc_block just calls a known Ruby function with a block many, many times.
+  category: micro
+  single_file: true
+send_rubyfunc_inline:
+  desc: send_rubyfunc_inline repeatedly calls a small inlinable Ruby method with multiple arguments.
   category: micro
   single_file: true
 setivar:
@@ -152,11 +244,46 @@ setivar_young:
   desc: setivar_object tests the performance of setting instance variables to an object, to test write barrier speed on young objects.
   category: micro
   single_file: true
+  ractor: true
 str_concat:
   desc: str_concat tests the performance of string concatenation in multiple different encodings.
+  category: micro
+  single_file: true
+  ractor: true
+structaref:
+  desc: structaref tests the performance of getting Struct members
+  category: micro
+  single_file: true
+structaset:
+  desc: structaset tests the performance of setting Struct members
   category: micro
   single_file: true
 throw:
   desc: microbenchmark for the throw instruction and stack unwinding.
   category: micro
   single_file: true
+  ractor: true
+
+#
+# Ractor scaling benchmarks
+#
+gvl_release_acquire:
+  desc: microbenchmark designed to test how fast the gvl can be acquired and released between ractors.
+  ractor: true
+  ractor_only: true
+  default_harness: harness-ractor
+json_parse_float:
+  desc: test the performance of parsing multiple lists of json floats with ractors.
+  ractor: true
+  ractor_only: true
+  default_harness: harness-ractor
+json_parse_string:
+  desc: test the performance of parsing multiple lists of strings with ractors.
+  ractor: true
+  ractor_only: true
+  default_harness: harness-ractor
+symbol-name-ractor:
+  desc: repeatedly calls Symbol#name on a static symbol under the ractor harness to stress ID-to-string lookup.
+  ractor: true
+  ractor_only: true
+  default_harness: harness-ractor

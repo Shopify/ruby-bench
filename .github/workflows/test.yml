@@ -6,8 +6,42 @@ on:
   pull_request:
   schedule:
     - cron: "00 15 * * *"
+env:
+  BUNDLE_VERSION: system
 jobs:
   test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: [ruby, head, truffleruby]
+    if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-imagemagick-${{ hashFiles('.github/workflows/test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-imagemagick-
+      - name: Install ImageMagick dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libmagickwand-dev
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler: ${{ matrix.ruby == 'head' && 'default' || 'Gemfile.lock' }}
+          bundler-cache: true
+
+      - name: Run tests
+        run: bundle exec rake test
+
+  benchmark-default:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -16,7 +50,11 @@ jobs:
           - ruby: ruby
           - ruby: head
           - ruby: truffleruby
-            skip: protoboeuf-encode ruby-lsp shipit
+            # knucleotide: needs fork
+            # lobsters: commonmarker fails to install
+            # ruby-lsp: rbs_extension.so: undefined symbol: ruby_vm_at_exit
+            # shipit: cannot load such file -- pty
+            extra_args: "--excludes=knucleotide,lobsters,ruby-lsp,shipit"
     if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
     steps:
       - uses: actions/checkout@v3
@@ -25,32 +63,111 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
 
-      - name: Run tests
-        run: ruby test/benchmarks_test.rb
-
       - name: Test run_benchmarks.rb
-        run: |
-          for benchmark in $SKIP_BENCHMARKS; do
-            rm -rf "benchmarks/${benchmark}.rb" "benchmarks/${benchmark}/"
-          done
-          ./run_benchmarks.rb
+        run: ./run_benchmarks.rb ${{ matrix.extra_args }}
         env:
           WARMUP_ITRS: '1'
           MIN_BENCH_ITRS: '1'
           MIN_BENCH_TIME: '0'
-          SKIP_BENCHMARKS: ${{ matrix.skip }}
 
-      - name: Test run_benchmarks.rb --graph
+  benchmark-ractor:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: [head]
+    if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+
+      - name: Test run_benchmarks.rb - Ractors
+        run: ./run_benchmarks.rb --category=ractor
+        env:
+          WARMUP_ITRS: '1'
+          MIN_BENCH_ITRS: '1'
+          MIN_BENCH_TIME: '0'
+
+  benchmark-ractor-only:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: [head]
+    if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+
+      - name: Test run_benchmarks.rb - Ractor Only
+        run: ./run_benchmarks.rb --category=ractor-only
+        env:
+          WARMUP_ITRS: '1'
+          MIN_BENCH_ITRS: '1'
+          MIN_BENCH_TIME: '0'
+
+  benchmark-graph:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-imagemagick-${{ hashFiles('.github/workflows/test.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-imagemagick-
+      - name: Install ImageMagick dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libmagickwand-dev
-          ./run_benchmarks.rb --graph fib
-        if: matrix.ruby == 'ruby'
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ruby
+
+      - name: Test run_benchmarks.rb --graph
+        run: ./run_benchmarks.rb --graph fib
         env:
           WARMUP_ITRS: '1'
           MIN_BENCH_ITRS: '1'
           MIN_BENCH_TIME: '0'
 
+  benchmark-run-once:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'schedule' || github.repository == 'ruby/ruby-bench' }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: head
+
       - name: Test run_once.sh
         run: ./run_once.sh --yjit-stats benchmarks/railsbench/benchmark.rb
-        if: matrix.ruby == 'head'
+
+  all-tests:
+    runs-on: ubuntu-latest
+    needs: [test, benchmark-default, benchmark-ractor, benchmark-ractor-only, benchmark-graph, benchmark-run-once]
+    if: always()
+    steps:
+      - name: Check all job results
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          elif [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more jobs were cancelled"
+            exit 1
+          else
+            echo "All jobs completed successfully"
+          fi

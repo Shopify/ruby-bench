@@ -9,7 +9,7 @@ MIN_BENCH_ITRS = Integer(ENV.fetch('MIN_BENCH_ITRS', 10))
 # Minimum benchmarking time in seconds
 MIN_BENCH_TIME = Integer(ENV.fetch('MIN_BENCH_TIME', 10))
 
-default_path = "data/results-#{RUBY_ENGINE}-#{RUBY_ENGINE_VERSION}-#{Time.now.strftime('%F-%H%M%S')}.csv"
+default_path = File.expand_path("../data/results-#{RUBY_ENGINE}-#{RUBY_ENGINE_VERSION}-#{Time.now.strftime('%F-%H%M%S')}.csv", __dir__)
 OUT_CSV_PATH = File.expand_path(ENV.fetch('OUT_CSV_PATH', default_path))
 
 RSS_CSV_PATH = ENV['RSS_CSV_PATH'] ? File.expand_path(ENV['RSS_CSV_PATH']) : nil
@@ -32,8 +32,9 @@ def realtime
 end
 
 # Takes a block as input
-def run_benchmark(_num_itrs_hint, &block)
+def run_benchmark(_num_itrs_hint, **, &block)
   times = []
+  rss_samples = []
   total_time = 0
   num_itrs = 0
   header = "itr:   time"
@@ -75,10 +76,15 @@ def run_benchmark(_num_itrs_hint, &block)
     # We internally save the time in seconds to avoid loss of precision
     times << time
     total_time += time
+    # Sample current RSS between iterations (outside the timed block) so we can
+    # report the working set across the window with variance.
+    rss_samples << get_rss
   end until num_itrs >= WARMUP_ITRS + MIN_BENCH_ITRS and total_time >= MIN_BENCH_TIME
 
   warmup, bench = times[0...WARMUP_ITRS], times[WARMUP_ITRS..-1]
-  return_results(warmup, bench)
+  rss_bench = rss_samples[WARMUP_ITRS..-1] || []
+  extra = rss_bench.empty? ? {} : { "rss_samples" => rss_bench }
+  return_results(warmup, bench, **extra)
 
   non_warmups = times[WARMUP_ITRS..-1]
   if non_warmups.size > 1

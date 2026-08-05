@@ -1,4 +1,5 @@
 require 'rbconfig'
+require_relative '../misc/stats'
 
 # Ensure the ruby in PATH is the ruby running this, so we can safely shell out to other commands
 ruby_in_path = `ruby -e 'print RbConfig.ruby'`
@@ -8,10 +9,20 @@ unless ruby_in_path == RbConfig.ruby
 end
 
 # Support enabling GC auto-compaction via environment variable
-GC.auto_compact = !!ENV["RUBY_GC_AUTO_COMPACT"]
+GC.auto_compact = !!ENV["RUBY_GC_AUTO_COMPACT"] if GC.respond_to?(:auto_compact)
 
 # Seed the global random number generator for repeatability between runs
 Random.srand(1337)
+
+if defined?(Ractor.make_shareable)
+  def make_shareable(obj, copy: false)
+    Ractor.make_shareable(obj, copy: copy)
+  end
+else
+  def make_shareable(obj, copy: false)
+    obj # noop
+  end
+end
 
 def format_number(num)
   num.to_s.split(".").tap do |a|
@@ -44,7 +55,12 @@ def use_gemfile(extra_setup_cmd: nil)
   setup_cmds(["bundle check 2> /dev/null || bundle install", extra_setup_cmd].compact)
 
   # Need to be in the appropriate directory for this...
-  require "bundler/setup"
+  require "bundler"
+  # Use Bundler.setup instead of require 'bundler/setup' to avoid bundler's autoswitch restarting the
+  # process and messing with LOAD_PATH. Autoswitching occurs when the BUNDLED_WITH in the Gemfile.lock
+  # is a different version than the loaded version of bundler. This can happen in development when
+  # switching between ruby versions.
+  Bundler.setup
 end
 
 # This returns its best estimate of the Resident Set Size in bytes.
@@ -60,8 +76,13 @@ def get_rss
     # Collect our own peak mem usage as soon as reasonable after finishing the last iteration.
     # This method is only accurate to kilobytes, but is nicely portable and doesn't require
     # any extra gems/dependencies.
-    mem = `ps -o rss= -p #{Process.pid}`
-    1024 * Integer(mem)
+    begin
+      mem = `ps -o rss= -p #{Process.pid}`
+      1024 * Integer(mem)
+    rescue ArgumentError, Errno::ENOENT
+      # ps failed (e.g. Nix procps on macOS). Fall back to peak RSS via getrusage.
+      get_maxrss || 0
+    end
   end
 end
 
@@ -116,51 +137,61 @@ rescue LoadError
 end
 
 # Do expand_path at require-time, not when returning results, before the benchmark is likely to chdir
-default_path = "data/results-#{RUBY_ENGINE}-#{RUBY_ENGINE_VERSION}-#{Time.now.strftime('%F-%H%M%S')}.json"
+default_path = File.expand_path("../data/results-#{RUBY_ENGINE}-#{RUBY_ENGINE_VERSION}-#{Time.now.strftime('%F-%H%M%S')}.json", __dir__)
 yb_env_var = ENV.fetch("RESULT_JSON_PATH", default_path)
 YB_OUTPUT_FILE = File.expand_path yb_env_var
 
-def return_results(warmup_iterations, bench_iterations)
-  yjit_bench_results = {
+def return_results(warmup_iterations, bench_iterations, **extra)
+  ruby_bench_results = {
     "RUBY_DESCRIPTION" => RUBY_DESCRIPTION,
     "warmup" => warmup_iterations,
     "bench" => bench_iterations,
+    **extra,
   }
 
   # Collect JIT stats before loading any additional code.
   yjit_stats = RubyVM::YJIT.runtime_stats if defined?(RubyVM::YJIT.enabled?) && RubyVM::YJIT.enabled?
   zjit_stats = RubyVM::ZJIT.stats if defined?(RubyVM::ZJIT.enabled?) && RubyVM::ZJIT.enabled?
 
-  # Collect our own peak mem usage as soon as reasonable after finishing the last iteration.
+  # Full GC before measuring RSS to lower GC variance.
+  GC.start(full_mark: true, immediate_sweep: true)
+
   rss = get_rss
-  yjit_bench_results["rss"] = rss
+  ruby_bench_results["rss"] = rss
   if maxrss = get_maxrss
-    yjit_bench_results["maxrss"] = maxrss
+    ruby_bench_results["maxrss"] = maxrss
   end
 
   # If YJIT or ZJIT is enabled, show some of its stats unless it does by itself.
-  if yjit_stats && !RubyVM::YJIT.stats_enabled?
-    yjit_bench_results["yjit_stats"] = yjit_stats
-    stats_keys = [
-      *ENV.fetch("YJIT_BENCH_STATS", "").split(",").map(&:to_sym),
-      :inline_code_size,
-      :outlined_code_size,
-      :code_region_size,
-      :yjit_alloc_size,
-      :compile_time_ns,
-    ].uniq
-    puts "YJIT stats:"
-  elsif zjit_stats && defined?(RubyVM::ZJIT.stats_enabled?) && !RubyVM::ZJIT.stats_enabled?
-    yjit_bench_results["zjit_stats"] = zjit_stats
-    stats_keys = [
-      *ENV.fetch("ZJIT_BENCH_STATS", "").split(",").map(&:to_sym),
-      :code_region_bytes,
-      :compile_time_ns,
-      :profile_time_ns,
-      :gc_time_ns,
-      :invalidation_time_ns,
-    ].uniq
-    puts "ZJIT stats:"
+  if yjit_stats
+    ruby_bench_results["yjit_stats"] = yjit_stats
+    if !RubyVM::YJIT.stats_enabled?
+      stats_keys = [
+        *ENV.fetch("YJIT_BENCH_STATS", "").split(",").map(&:to_sym),
+        :inline_code_size,
+        :outlined_code_size,
+        :code_region_size,
+        :yjit_alloc_size,
+        :compile_time_ns,
+      ].uniq
+      puts "YJIT stats:"
+    end
+  elsif zjit_stats
+    ruby_bench_results["zjit_stats"] = zjit_stats
+    if defined?(RubyVM::ZJIT.stats_enabled?) && !RubyVM::ZJIT.stats_enabled?
+      stats_keys = [
+        *ENV.fetch("ZJIT_BENCH_STATS", "").split(",").map(&:to_sym),
+        :code_region_bytes,
+        :zjit_alloc_bytes,
+        :compile_time_ns,
+        :profile_time_ns,
+        :gc_time_ns,
+        :invalidation_time_ns,
+      ].uniq
+      puts "ZJIT stats:"
+    elsif defined?(RubyVM::ZJIT.stats_string)
+      ruby_bench_results["zjit_stats_string"] = RubyVM::ZJIT.stats_string
+    end
   end
   if stats_keys
     jit_stats = yjit_stats || zjit_stats
@@ -184,10 +215,21 @@ def return_results(warmup_iterations, bench_iterations)
     puts "MAXRSS: %.1fMiB" % (maxrss / 1024.0 / 1024.0)
   end
 
-  write_json_file(yjit_bench_results)
+  rss_samples = ruby_bench_results["rss_samples"]
+  if rss_samples.is_a?(Array) && !rss_samples.empty?
+    mib = rss_samples.map { |bytes| bytes / 1024.0 / 1024.0 }
+    stats = Stats.new(mib)
+    median = stats.median
+    mad = stats.median_absolute_deviation(median)
+    puts "RSS sampled (n=%d): median %.1fMiB \u00b1 %.1fMiB (MAD), range [%.1f, %.1f]MiB" % [
+      mib.size, median, mad, stats.min, stats.max
+    ]
+  end
+
+  write_json_file(ruby_bench_results)
 end
 
-def write_json_file(yjit_bench_results)
+def write_json_file(ruby_bench_results)
   require "json"
 
   out_path = YB_OUTPUT_FILE
@@ -196,7 +238,7 @@ def write_json_file(yjit_bench_results)
   # Using default path? Print where we put it.
   puts "Writing file #{out_path}" unless ENV["RESULT_JSON_PATH"]
 
-  File.write(out_path, JSON.pretty_generate(yjit_bench_results))
+  File.write(out_path, JSON.pretty_generate(ruby_bench_results))
 rescue LoadError
   warn "Failed to write JSON file: #{$!.message}"
 end

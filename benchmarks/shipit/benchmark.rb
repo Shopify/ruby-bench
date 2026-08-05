@@ -5,6 +5,7 @@ ENV['DISABLE_DATABASE_ENVIRONMENT_CHECK'] = '1' # Benchmarks don't really have '
 ENV['SHIPIT_DISABLE_AUTH'] = '1' # Saves us lots of trouble
 
 Dir.chdir __dir__
+
 use_gemfile
 
 require 'securerandom'
